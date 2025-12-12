@@ -72,16 +72,35 @@ function autoblogai_init() {
     $api_client      = new AutoblogAI\API\Client();
     $image_generator = new AutoblogAI\Generator\Image( $api_client );
     $post_generator  = new AutoblogAI\Generator\Post( $api_client, $image_generator, $logger );
-    
-    // Admin
-    if ( is_admin() ) {
-        new AutoblogAI\Admin\Admin( $post_generator, $logger, $security );
+
+    // Process scheduled queue items.
+    add_action(
+        'autoblogai_process_queued_topic',
+        static function ( $item ) use ( $post_generator, $logger ) {
+            if ( ! is_array( $item ) || empty( $item['topic'] ) ) {
+                return;
+            }
+
+            $topic   = (string) ( $item['topic'] ?? '' );
+            $keyword = (string) ( $item['keyword'] ?? '' );
+
+            $result = $post_generator->generate_and_publish( $topic, $keyword, array( 'publish_mode' => 'publish' ) );
+            if ( is_wp_error( $result ) ) {
+                $logger->log( $topic, $result->get_error_message(), 'error' );
+            }
+        }
+    );
+
+    // Scheduler enablement.
+    if ( (bool) get_option( 'autoblogai_scheduler_enabled', false ) ) {
+        $frequency = get_option( 'autoblogai_schedule_frequency', 'daily' );
+        $scheduler->schedule_events( $frequency );
     }
 
-    // Scheduler
-    // Hook scheduler to init or schedule events if needed. 
-    // Currently Scheduler only has methods, but if we want to run scheduled tasks, we'd hook them here.
-    // For now, we just instantiated it as per requirements.
+    // Admin
+    if ( is_admin() ) {
+        new AutoblogAI\Admin\Admin( $post_generator, $logger, $security, $scheduler );
+    }
 
     // Frontend Schema
     $schema = new AutoblogAI\Frontend\Schema();

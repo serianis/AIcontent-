@@ -118,8 +118,10 @@ class AutoblogAI_Post_Generator {
             }
         }
 
+        $post_content_html  = $this->build_post_content_html( $parsed );
+
         // Attach JSON-LD schema to post content
-        $content_with_schema = $this->attach_json_ld_schema( $parsed['content_html'], $parsed );
+        $content_with_schema = $this->attach_json_ld_schema( $post_content_html, $parsed );
 
         // Create the post
         $post_status = $publish_mode;
@@ -177,6 +179,50 @@ class AutoblogAI_Post_Generator {
     }
 
     /**
+     * Generate a preview of the post without creating a WordPress post.
+     *
+     * @param string $topic The main topic.
+     * @param string $keyword Optional keyword.
+     * @param array  $args Optional args (locale, tone).
+     * @return array|WP_Error Parsed content data.
+     */
+    public function generate_preview( $topic, $keyword = '', $args = array() ) {
+        $locale = $args['locale'] ?? get_option( 'autoblogai_language', 'Greek' );
+        $tone   = $args['tone'] ?? get_option( 'autoblogai_tone', 'Professional' );
+
+        $prompt = $this->assemble_prompt( $topic, $keyword, $locale, $tone );
+        if ( is_wp_error( $prompt ) ) {
+            return $prompt;
+        }
+
+        $content_data = $this->api_client->generate_json( $prompt );
+        if ( is_wp_error( $content_data ) ) {
+            return $content_data;
+        }
+
+        $parsed = $this->parse_and_validate_response( $content_data );
+        if ( is_wp_error( $parsed ) ) {
+            return $parsed;
+        }
+
+        $banned_check = $this->check_banned_words( $parsed );
+        if ( is_wp_error( $banned_check ) ) {
+            return $banned_check;
+        }
+
+        if ( function_exists( 'get_posts' ) ) {
+            $duplicate_check = $this->check_duplicate_content( $parsed['title'], $parsed['content_html'] );
+            if ( is_wp_error( $duplicate_check ) ) {
+                return $duplicate_check;
+            }
+        }
+
+        $parsed['content_html'] = $this->build_post_content_html( $parsed );
+
+        return $parsed;
+    }
+
+    /**
      * Assemble the prompt for Gemini with specific structure requirements.
      *
      * @param string $topic The main topic.
@@ -190,6 +236,23 @@ class AutoblogAI_Post_Generator {
 
         if ( '' !== $prompt ) {
             return $prompt;
+        }
+
+        $custom_template = get_option( 'autoblogai_prompt_template_custom', '' );
+        if ( is_string( $custom_template ) && '' !== trim( $custom_template ) ) {
+            $replacements = array(
+                '{{topic}}'   => $topic,
+                '{{keyword}}' => $keyword,
+                '{{locale}}'  => $locale,
+                '{{tone}}'    => $tone,
+            );
+
+            $custom_prompt = strtr( $custom_template, $replacements );
+            $custom_prompt = apply_filters( 'autoblogai_prompt_template', $custom_prompt, $topic, $keyword, $locale, $tone );
+
+            if ( is_string( $custom_prompt ) && '' !== trim( $custom_prompt ) ) {
+                return $custom_prompt;
+            }
         }
 
         $prompt = <<<PROMPT
@@ -329,44 +392,94 @@ PROMPT;
             return new WP_Error( self::ERROR_INVALID_RESPONSE, 'At least one image prompt is required' );
         }
 
-        // Combine content with FAQ
-        $content_with_faq = $this->combine_content_with_faq( $content, $lede, $faq );
+        $cta     = trim( (string) $response['cta'] );
+        $faq_html = $this->render_faq_html( $faq );
+
+        // Combine content with lede/CTA/FAQ for default output.
+        $content_with_faq = $this->combine_content_with_faq( $content, $lede, $cta, $faq );
 
         return array(
-            'title'              => $title,
-            'lede'               => $lede,
-            'content_html'       => $content_with_faq,
-            'cta'                => trim( (string) $response['cta'] ),
-            'faq'                => $faq,
-            'meta_title'         => $meta_title,
-            'meta_description'   => $meta_desc,
-            'keywords'           => trim( (string) $response['keywords'] ),
-            'image_prompts'      => $image_prompts,
+            'title'            => $title,
+            'lede'             => $lede,
+            'body_html'        => $content,
+            'content_html'     => $content_with_faq,
+            'cta'              => $cta,
+            'faq'              => $faq,
+            'faq_html'         => $faq_html,
+            'meta_title'       => $meta_title,
+            'meta_description' => $meta_desc,
+            'keywords'         => trim( (string) $response['keywords'] ),
+            'image_prompts'    => $image_prompts,
         );
     }
 
     /**
-     * Combine main content with FAQ section.
+     * Combine main content with lede, CTA and FAQ.
      *
      * @param string $content Main HTML content.
      * @param string $lede Introduction paragraph.
+     * @param string $cta CTA text.
      * @param array  $faq FAQ pairs.
      * @return string Combined HTML content.
      */
-    private function combine_content_with_faq( $content, $lede, $faq ) {
+    private function combine_content_with_faq( $content, $lede, $cta, $faq ) {
         $combined = '<p>' . wp_strip_all_tags( $lede ) . '</p>';
         $combined .= $content;
 
-        // Add FAQ section
-        $combined .= '<h2>Frequently Asked Questions</h2>';
-        foreach ( $faq as $pair ) {
-            $question = wp_strip_all_tags( $pair['question'] );
-            $answer   = wp_strip_all_tags( $pair['answer'] );
-            $combined .= '<h3>' . esc_html( $question ) . '</h3>';
-            $combined .= '<p>' . wp_strip_all_tags( $answer ) . '</p>';
+        if ( '' !== trim( $cta ) ) {
+            $combined .= '<p>' . wp_strip_all_tags( $cta ) . '</p>';
         }
 
+        $combined .= $this->render_faq_html( $faq );
+
         return $combined;
+    }
+
+    private function render_faq_html( array $faq ): string {
+        $heading = function_exists( '__' ) ? __( 'Frequently Asked Questions', 'autoblogai' ) : 'Frequently Asked Questions';
+
+        $out = '<h2>' . esc_html( $heading ) . '</h2>';
+
+        foreach ( $faq as $pair ) {
+            $question = wp_strip_all_tags( $pair['question'] ?? '' );
+            $answer   = wp_strip_all_tags( $pair['answer'] ?? '' );
+
+            if ( '' === trim( $question ) && '' === trim( $answer ) ) {
+                continue;
+            }
+
+            $out .= '<h3>' . esc_html( $question ) . '</h3>';
+            $out .= '<p>' . wp_strip_all_tags( $answer ) . '</p>';
+        }
+
+        return $out;
+    }
+
+    private function build_post_content_html( array $content_data ): string {
+        $template = get_option( 'autoblogai_article_template', '' );
+
+        if ( ! is_string( $template ) || '' === trim( $template ) ) {
+            return (string) ( $content_data['content_html'] ?? '' );
+        }
+
+        $faq_html = (string) ( $content_data['faq_html'] ?? '' );
+        if ( '' === $faq_html && isset( $content_data['faq'] ) && is_array( $content_data['faq'] ) ) {
+            $faq_html = $this->render_faq_html( $content_data['faq'] );
+        }
+
+        $replacements = array(
+            '{{title}}'            => esc_html( wp_strip_all_tags( (string) ( $content_data['title'] ?? '' ) ) ),
+            '{{lede}}'             => esc_html( wp_strip_all_tags( (string) ( $content_data['lede'] ?? '' ) ) ),
+            '{{body_html}}'        => (string) ( $content_data['body_html'] ?? '' ),
+            '{{content_html}}'     => (string) ( $content_data['content_html'] ?? '' ),
+            '{{cta}}'              => esc_html( wp_strip_all_tags( (string) ( $content_data['cta'] ?? '' ) ) ),
+            '{{faq_html}}'         => $faq_html,
+            '{{meta_title}}'       => esc_html( wp_strip_all_tags( (string) ( $content_data['meta_title'] ?? '' ) ) ),
+            '{{meta_description}}' => esc_html( wp_strip_all_tags( (string) ( $content_data['meta_description'] ?? '' ) ) ),
+            '{{keywords}}'         => esc_html( wp_strip_all_tags( (string) ( $content_data['keywords'] ?? '' ) ) ),
+        );
+
+        return strtr( $template, $replacements );
     }
 
     /**

@@ -38,7 +38,8 @@ class AutoblogAI_API_Client {
     private $set_transient;
 
     public function __construct( array $args = array() ) {
-        $this->api_key  = (string) ( $args['api_key'] ?? get_option( self::OPTION_API_KEY, '' ) );
+        $raw_api_key   = (string) ( $args['api_key'] ?? get_option( self::OPTION_API_KEY, '' ) );
+        $this->api_key  = $this->maybe_decrypt_api_key( $raw_api_key );
         $this->base_url = (string) ( $args['base_url'] ?? 'https://generativelanguage.googleapis.com/v1beta/models/' );
         $this->text_model = (string) ( $args['text_model'] ?? apply_filters( 'autoblogai_gemini_text_model', 'gemini-2.0-flash-exp' ) );
 
@@ -47,7 +48,10 @@ class AutoblogAI_API_Client {
 
         $this->max_retries             = (int) ( $args['max_retries'] ?? 2 );
         $this->initial_backoff_seconds = (float) ( $args['initial_backoff_seconds'] ?? 1.0 );
-        $this->rate_limit_per_minute   = (int) ( $args['rate_limit_per_minute'] ?? apply_filters( 'autoblogai_rate_limit_per_minute', 60 ) );
+
+        $default_rate_limit          = (int) get_option( 'autoblogai_rate_limit_per_minute', 60 );
+        $filtered_default_rate_limit = (int) apply_filters( 'autoblogai_rate_limit_per_minute', $default_rate_limit );
+        $this->rate_limit_per_minute = (int) ( $args['rate_limit_per_minute'] ?? $filtered_default_rate_limit );
 
         $this->http_post = $args['http_post'] ?? ( function_exists( 'wp_remote_post' ) ? 'wp_remote_post' : null );
         $this->time_fn   = $args['time_fn'] ?? 'time';
@@ -187,6 +191,28 @@ class AutoblogAI_API_Client {
         }
 
         return $last_error instanceof WP_Error ? $last_error : new WP_Error( self::ERROR_HTTP_ERROR, 'Gemini request failed.' );
+    }
+
+    private function maybe_decrypt_api_key( string $value ): string {
+        $value = trim( $value );
+        if ( '' === $value ) {
+            return '';
+        }
+
+        // Heuristic: encrypted values are base64 and usually include +/=. Google API keys typically do not.
+        $looks_base64 = (bool) preg_match( '/[=+\/]/', $value ) || strlen( $value ) > 60;
+        if ( ! $looks_base64 ) {
+            return $value;
+        }
+
+        if ( ! class_exists( '\\AutoblogAI\\Core\\Security' ) ) {
+            return $value;
+        }
+
+        $security  = new \\AutoblogAI\\Core\\Security();
+        $decrypted = $security->decrypt_api_key( $value );
+
+        return '' !== $decrypted ? $decrypted : $value;
     }
 
     private function normalize_temperature( $temperature ): float {

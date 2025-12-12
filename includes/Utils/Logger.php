@@ -77,7 +77,16 @@ class Logger {
     }
 
     private function redact_sensitive_data( $payload ) {
-        $api_key = get_option( 'autoblogai_api_key', '' );
+        $api_key = (string) get_option( 'autoblogai_api_key', '' );
+
+        if ( '' !== $api_key && class_exists( '\\AutoblogAI\\Core\\Security' ) ) {
+            $security  = new \\AutoblogAI\\Core\\Security();
+            $decrypted = $security->decrypt_api_key( $api_key );
+            if ( '' !== $decrypted ) {
+                $api_key = $decrypted;
+            }
+        }
+
         return $this->redact_sensitive_value( $payload, $api_key );
     }
 

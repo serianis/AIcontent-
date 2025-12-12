@@ -10,40 +10,50 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Scheduler {
 
-    const DAILY_EVENT_HOOK = 'autoblogai_daily_publish_event';
-    const QUEUE_OPTION_KEY = 'autoblogai_publish_queue';
-    const DAILY_CAP_OPTION = 'autoblogai_daily_publish_cap';
-    const LAST_PUBLISH_DATE = 'autoblogai_last_publish_date';
+    public const DAILY_EVENT_HOOK     = 'autoblogai_daily_publish_event';
+    public const QUEUE_OPTION_KEY     = 'autoblogai_publish_queue';
+    public const DAILY_CAP_OPTION     = 'autoblogai_max_posts_per_day';
+    public const FREQUENCY_OPTION_KEY = 'autoblogai_schedule_frequency';
 
-    private $is_running = false;
+    private bool $is_running = false;
 
     public function __construct() {
         add_action( self::DAILY_EVENT_HOOK, array( $this, 'process_scheduled_posts' ) );
     }
 
-    public function schedule_events() {
+    public function schedule_events( ?string $recurrence = null ) {
+        $recurrence = $recurrence ?: (string) get_option( self::FREQUENCY_OPTION_KEY, 'daily' );
+
+        $allowed = array_keys( $this->get_admin_schedules() );
+        if ( ! in_array( $recurrence, $allowed, true ) ) {
+            $recurrence = 'daily';
+        }
+
+        // Ensure we don't keep old recurrences around.
+        $this->unschedule_events();
+
         if ( ! wp_next_scheduled( self::DAILY_EVENT_HOOK ) ) {
-            wp_schedule_event( time(), 'daily', self::DAILY_EVENT_HOOK );
+            wp_schedule_event( time(), $recurrence, self::DAILY_EVENT_HOOK );
         }
     }
 
     public function unschedule_events() {
-        $timestamp = wp_next_scheduled( self::DAILY_EVENT_HOOK );
-        if ( $timestamp ) {
+        while ( $timestamp = wp_next_scheduled( self::DAILY_EVENT_HOOK ) ) {
             wp_unschedule_event( $timestamp, self::DAILY_EVENT_HOOK );
         }
     }
 
-    public function get_admin_schedules() {
+    public function get_admin_schedules(): array {
         return array(
-            'daily'           => array( 'label' => 'Daily' ),
-            'twicedaily'      => array( 'label' => 'Twice Daily' ),
-            'hourly'          => array( 'label' => 'Hourly' ),
+            'daily'      => array( 'label' => __( 'Daily', 'autoblogai' ) ),
+            'twicedaily' => array( 'label' => __( 'Twice Daily', 'autoblogai' ) ),
+            'hourly'     => array( 'label' => __( 'Hourly', 'autoblogai' ) ),
         );
     }
 
-    public function get_schedule_status() {
+    public function get_schedule_status(): array {
         $timestamp = wp_next_scheduled( self::DAILY_EVENT_HOOK );
+
         return array(
             'is_scheduled' => false !== $timestamp,
             'next_run'     => $timestamp ? gmdate( 'Y-m-d H:i:s', $timestamp ) : null,
@@ -57,25 +67,18 @@ class Scheduler {
         if ( ! is_numeric( $cap ) || $cap < 0 ) {
             return new WP_Error( 'invalid_cap', 'Daily publish cap must be a non-negative number' );
         }
-        update_option( self::DAILY_CAP_OPTION, intval( $cap ) );
+
+        update_option( self::DAILY_CAP_OPTION, (int) $cap );
         return true;
     }
 
-    public function get_daily_publish_cap() {
-        return intval( get_option( self::DAILY_CAP_OPTION, 0 ) );
+    public function get_daily_publish_cap(): int {
+        return (int) get_option( self::DAILY_CAP_OPTION, 10 );
     }
 
-    public function get_posts_published_today() {
-        $today = date( 'Y-m-d', current_time( 'timestamp' ) );
-        $last_run = get_option( self::LAST_PUBLISH_DATE );
-        
-        if ( $last_run && substr( $last_run, 0, 10 ) === $today ) {
-            $queue = get_option( self::QUEUE_OPTION_KEY, array() );
-            if ( is_array( $queue ) ) {
-                return count( $queue );
-            }
-        }
-        return 0;
+    public function get_posts_published_today(): int {
+        $count = get_transient( 'autoblogai_daily_post_count' );
+        return false === $count ? 0 : (int) $count;
     }
 
     public function enqueue_topic( $topic, $keyword = '' ) {
@@ -85,8 +88,8 @@ class Scheduler {
         }
 
         $queue[] = array(
-            'topic'   => sanitize_text_field( $topic ),
-            'keyword' => sanitize_text_field( $keyword ),
+            'topic'     => sanitize_text_field( $topic ),
+            'keyword'   => sanitize_text_field( $keyword ),
             'queued_at' => current_time( 'mysql' ),
         );
 
@@ -105,17 +108,16 @@ class Scheduler {
         return $topic;
     }
 
-    public function get_queued_topics() {
+    public function get_queued_topics(): array {
         $queue = get_option( self::QUEUE_OPTION_KEY, array() );
         return is_array( $queue ) ? $queue : array();
     }
 
-    public function get_queued_topics_count() {
-        $queue = $this->get_queued_topics();
-        return count( $queue );
+    public function get_queued_topics_count(): int {
+        return count( $this->get_queued_topics() );
     }
 
-    public function clear_queue() {
+    public function clear_queue(): bool {
         delete_option( self::QUEUE_OPTION_KEY );
         return true;
     }
@@ -128,7 +130,7 @@ class Scheduler {
         $this->is_running = true;
 
         try {
-            $daily_cap = $this->get_daily_publish_cap();
+            $daily_cap       = $this->get_daily_publish_cap();
             $published_today = $this->get_posts_published_today();
 
             if ( $daily_cap > 0 && $published_today >= $daily_cap ) {
@@ -144,12 +146,10 @@ class Scheduler {
 
             do_action( 'autoblogai_process_queued_topic', $topic );
 
-            update_option( self::LAST_PUBLISH_DATE, current_time( 'mysql' ) );
-
             $this->is_running = false;
             return true;
 
-        } catch ( Exception $e ) {
+        } catch ( \Exception $e ) {
             $this->is_running = false;
             return new WP_Error( 'process_error', $e->getMessage() );
         }

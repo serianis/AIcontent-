@@ -20,6 +20,14 @@ if ( ! defined( 'AUTOBLOGAI_TABLE_LOGS' ) ) {
     define( 'AUTOBLOGAI_TABLE_LOGS', 'autoblogai_logs' );
 }
 
+if ( ! defined( 'DAY_IN_SECONDS' ) ) {
+    define( 'DAY_IN_SECONDS', 86400 );
+}
+
+if ( ! defined( 'HOUR_IN_SECONDS' ) ) {
+    define( 'HOUR_IN_SECONDS', 3600 );
+}
+
 // Load the autoloader
 require_once ABSPATH . 'includes/Autoloader.php';
 
@@ -57,6 +65,30 @@ if ( ! function_exists( 'plugin_dir_path' ) ) {
 if ( ! function_exists( 'apply_filters' ) ) {
     function apply_filters( $tag, $value, ...$args ) {
         return $value;
+    }
+}
+
+if ( ! function_exists( '__' ) ) {
+    function __( $text, $domain = null ) {
+        return $text;
+    }
+}
+
+if ( ! function_exists( 'esc_html' ) ) {
+    function esc_html( $text ) {
+        return htmlspecialchars( (string) $text, ENT_QUOTES, 'UTF-8' );
+    }
+}
+
+if ( ! function_exists( 'esc_attr' ) ) {
+    function esc_attr( $text ) {
+        return htmlspecialchars( (string) $text, ENT_QUOTES, 'UTF-8' );
+    }
+}
+
+if ( ! function_exists( 'esc_textarea' ) ) {
+    function esc_textarea( $text ) {
+        return esc_html( $text );
     }
 }
 
