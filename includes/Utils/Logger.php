@@ -18,7 +18,8 @@ class Logger {
     public function log( $request_payload, $response_excerpt, $status, $post_id = null ) {
         global $wpdb;
 
-        $request_hash = $this->generate_request_hash( $request_payload );
+        $request_payload = $this->redact_sensitive_data( $request_payload );
+        $request_hash    = $this->generate_request_hash( $request_payload );
 
         $wpdb->insert(
             $this->table_name,
@@ -73,6 +74,41 @@ class Logger {
         global $wpdb;
         $date = date( 'Y-m-d H:i:s', strtotime( "-{$days} days" ) );
         return $wpdb->query( $wpdb->prepare( "DELETE FROM {$this->table_name} WHERE created_at < %s", $date ) );
+    }
+
+    private function redact_sensitive_data( $payload ) {
+        $api_key = get_option( 'autoblogai_api_key', '' );
+        return $this->redact_sensitive_value( $payload, $api_key );
+    }
+
+    private function redact_sensitive_value( $value, $api_key ) {
+        if ( is_string( $value ) ) {
+            if ( ! empty( $api_key ) ) {
+                $value = str_replace( $api_key, '[REDACTED]', $value );
+            }
+            $value = preg_replace( '/([?&]key=)([^&]+)/', '$1[REDACTED]', $value );
+            $value = preg_replace( '/(Authorization:\s*Bearer\s+)(\S+)/i', '$1[REDACTED]', $value );
+            return $value;
+        }
+
+        if ( is_array( $value ) ) {
+            $redacted = array();
+            foreach ( $value as $k => $v ) {
+                $key = is_string( $k ) ? $k : $k;
+                if ( is_string( $key ) && preg_match( '/(api_?key|authorization|key)/i', $key ) ) {
+                    $redacted[ $k ] = '[REDACTED]';
+                    continue;
+                }
+                $redacted[ $k ] = $this->redact_sensitive_value( $v, $api_key );
+            }
+            return $redacted;
+        }
+
+        if ( is_object( $value ) ) {
+            return $this->redact_sensitive_value( (array) $value, $api_key );
+        }
+
+        return $value;
     }
 
     private function generate_request_hash( $request_payload ) {

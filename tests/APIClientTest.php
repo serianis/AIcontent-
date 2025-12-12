@@ -3,6 +3,7 @@
 namespace AutoblogAI\Tests;
 
 use AutoblogAI\API\Client;
+use AutoblogAI\Generator\Image;
 use PHPUnit\Framework\TestCase;
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -10,8 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class APIClientTest extends TestCase {
-
-	private $client;
+	private Client $client;
 
 	protected function setUp(): void {
 		$this->client = new Client();
@@ -26,15 +26,15 @@ class APIClientTest extends TestCase {
 		$result = $this->client->generate_text( $prompt );
 
 		$this->assertWPError( $result );
-		$this->assertEquals( 'no_key', $result->get_error_code() );
+		$this->assertEquals( 'autoblogai_api_key_missing', $result->get_error_code() );
 	}
 
 	public function test_missing_api_key_for_image_generation() {
-		$prompt = 'A test image';
-		$result = $this->client->generate_image( $prompt );
+		$image_generator = new Image( $this->client );
+		$result          = $image_generator->generate_image_base64( 'A test image' );
 
 		$this->assertWPError( $result );
-		$this->assertEquals( 'no_key', $result->get_error_code() );
+		$this->assertEquals( 'autoblogai_api_key_missing', $result->get_error_code() );
 	}
 
 	protected function assertWPError( $thing ) {

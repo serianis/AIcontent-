@@ -52,6 +52,7 @@ class Admin {
         register_setting( 'autoblogai_options', 'autoblogai_language', array( 'default' => 'Greek' ) );
         register_setting( 'autoblogai_options', 'autoblogai_post_status', array( 'default' => 'draft' ) );
         register_setting( 'autoblogai_options', 'autoblogai_tone', array( 'default' => 'Professional' ) );
+        register_setting( 'autoblogai_options', 'autoblogai_temperature', array( 'default' => 0.4 ) );
     }
 
     public function render_dashboard_page() {
@@ -80,6 +81,13 @@ class Admin {
                                 <option value="Casual" <?php selected( get_option( 'autoblogai_tone' ), 'Casual' ); ?>>Casual</option>
                                 <option value="Journalistic" <?php selected( get_option( 'autoblogai_tone' ), 'Journalistic' ); ?>>Journalistic</option>
                             </select>
+                        </td>
+                    </tr>
+                    <tr valign="top">
+                        <th scope="row">Creativity (Temperature)</th>
+                        <td>
+                            <input type="number" name="autoblogai_temperature" min="0.2" max="0.6" step="0.1" value="<?php echo esc_attr( get_option( 'autoblogai_temperature', 0.4 ) ); ?>" />
+                            <p class="description">Lower values are more deterministic. Allowed range: 0.2–0.6</p>
                         </td>
                     </tr>
                     <tr valign="top">
