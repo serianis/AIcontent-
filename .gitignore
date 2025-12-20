@@ -1,0 +1,41 @@
+# Composer
+vendor/
+composer.lock
+
+# PHPUnit
+coverage/
+.phpunit.result.cache
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+.DS_Store
+
+# WordPress
+wp-content/cache/
+wp-content/plugins/*/
+wp-content/themes/*/
+wp-config.php
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.backup

@@ -1,0 +1,48 @@
+/* smartcontentai Admin UI */
+
+.smartcontentai-wrap {
+    max-width: 1100px;
+}
+
+.smartcontentai-card {
+    background: #fff;
+    border: 1px solid #dcdcde;
+    border-radius: 6px;
+    padding: 16px;
+    margin: 16px 0;
+}
+
+.smartcontentai-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+@media (max-width: 960px) {
+    .smartcontentai-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.smartcontentai-muted {
+    color: #646970;
+}
+
+.smartcontentai-preview {
+    border: 1px solid #dcdcde;
+    border-radius: 6px;
+    padding: 12px;
+    background: #f6f7f7;
+    max-height: 520px;
+    overflow: auto;
+}
+
+.smartcontentai-inline-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.smartcontentai-table-actions {
+    white-space: nowrap;
+}
