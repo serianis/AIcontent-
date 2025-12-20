@@ -1,4 +1,4 @@
-# smartcontentai - WordPress Plugin
+# Smart Content AI - WordPress Plugin
 
 An advanced WordPress plugin that uses Google Gemini API to automatically generate AI-powered articles with SEO optimization, hero images, and structured schema markup.
 
